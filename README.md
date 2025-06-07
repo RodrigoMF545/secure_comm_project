@@ -24,3 +24,12 @@ Este projeto requer as seguintes bibliotecas:
 - `pycryptodome`: Para realizar criptografia simétrica (AES) e HMAC.
 - `bcrypt`: Para armazenar senhas de forma segura com hashing.
 - `hashlib`: Para algoritmos de hash.
+
+## 🔧 Instalação
+
+Siga os passos abaixo para configurar o ambiente de desenvolvimento:
+
+### 1. **Clone o repositório**
+```bash
+git clone https://github.com/RodrigoMF545/secure_comm_project.git
+cd secure_comm_project
