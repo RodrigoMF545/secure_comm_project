@@ -15,3 +15,12 @@ Este projeto implementa um sistema seguro de comunicação ponto-a-ponto utiliza
 1. Instalar as dependências: `pip install cryptography pytest`
 2. Rodar o servidor: `python server.py`
 3. Rodar o cliente: `python client.py`
+
+## 📦 Dependências
+
+Este projeto requer as seguintes bibliotecas:
+
+- `cryptography`: Para criar e verificar certificados digitais, manipulação de chaves e criptografia assimétrica.
+- `pycryptodome`: Para realizar criptografia simétrica (AES) e HMAC.
+- `bcrypt`: Para armazenar senhas de forma segura com hashing.
+- `hashlib`: Para algoritmos de hash.
