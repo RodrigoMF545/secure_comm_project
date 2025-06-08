@@ -8,7 +8,16 @@ def connect_to_server(host, port):
     :return: objeto de socket
     """
     # TODO: implementar conexão ao servidor
-    pass
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((host,port))
+        print(f" Conectado ao servidor em {host} : {port}")
+        return sock
+    except ConnectionRefusedError:
+        print("Erro: Não foi possível conectar ao servidor.")
+        return None
+    
 
 def send_message(sock, message):
     """
@@ -17,4 +26,16 @@ def send_message(sock, message):
     :param message: mensagem a ser enviada
     """
     # TODO: implementar envio de mensagem
-    pass
+    
+    if not sock:
+        print("Erro: conexão inválida")
+
+    try:
+        sock.sendall(message.encode())
+        print(f" Enviado: message")
+        data = sock.recv(1024)
+        print(f"Resposta: {data.decode()}") 
+    except Exception as e:
+        print(f"[x] Erro no envio: {e}")
+    finally:
+        sock.close()
