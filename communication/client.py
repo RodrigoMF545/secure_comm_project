@@ -1,41 +1,31 @@
 import socket
+import threading
+from crypto.aes import encrypt_message, decrypt_message
 
 def connect_to_server(host, port):
-    """
-    Conecta ao servidor para envio de mensagens criptografadas
-    :param host: endereço do servidor
-    :param port: porta do servidor
-    :return: objeto de socket
-    """
-    # TODO: implementar conexão ao servidor
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((host, port))
+    return sock
 
+def send_username(sock, username):
+    sock.sendall(username.encode())
+
+def send_message(sock, message, key):
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((host,port))
-        print(f" Conectado ao servidor em {host} : {port}")
-        return sock
-    except ConnectionRefusedError:
-        print("Erro: Não foi possível conectar ao servidor.")
-        return None
-    
-
-def send_message(sock, message):
-    """
-    Envia uma mensagem criptografada ao servidor
-    :param sock: socket de conexão
-    :param message: mensagem a ser enviada
-    """
-    # TODO: implementar envio de mensagem
-    
-    if not sock:
-        print("Erro: conexão inválida")
-
-    try:
-        sock.sendall(message.encode())
-        print(f" Enviado: message")
-        data = sock.recv(1024)
-        print(f"Resposta: {data.decode()}") 
+        encrypted = encrypt_message(key, message)
+        sock.sendall(encrypted)
     except Exception as e:
-        print(f"[x] Erro no envio: {e}")
-    finally:
-        sock.close()
+        print("[x] Erro no envio:", e)
+
+def receive_messages(sock, key):
+    while True:
+        try:
+            data = sock.recv(4096)
+            if not data:
+                print("[!] Conexão encerrada pelo servidor.")
+                break
+            decrypted = decrypt_message(key, data)
+            print(f"\n📨 {decrypted}\n>> ", end="")
+        except Exception as e:
+            print("[x] Erro ao receber mensagem:", e)
+            break
