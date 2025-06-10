@@ -2,6 +2,7 @@ import json
 import os
 import re
 from auth.password_hashing import hash_password, verify_password
+from auth.storage import get_user
 
 # Caminho para o arquivo JSON que armazena as credenciais temporariamente
 CREDENTIALS_FILE = "users.json"
@@ -98,16 +99,15 @@ def login_user(username, password):
     try:
         validate_username(username)
         validate_password(password)
-    except ValueError:
+        print(f"Validando {username} com senha fornecida")
+        user = get_user(username)
+        if not user:
+            print(f"Usuário {username} não encontrado")
+            return False
+        hashed_password = user["hashed_password"]
+        result = verify_password(password, hashed_password)
+        print(f"Verificação de senha: {result}")
+        return result
+    except Exception as e:
+        print(f"Erro em login_user: {e}")
         return False
-
-    # Carrega os usuários existentes
-    users = load_users()
-
-    # Verifica se o usuário existe
-    if username not in users:
-        return False
-
-    # Verifica a senha
-    hashed_password = users[username]["hashed_password"]
-    return verify_password(password, hashed_password)

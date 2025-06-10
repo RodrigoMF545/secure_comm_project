@@ -1,4 +1,4 @@
-from password_hashing import hash_password
+from auth.password_hashing import hash_password
 
 # Simula um banco de dados de usuários com senha
 users_db = {
