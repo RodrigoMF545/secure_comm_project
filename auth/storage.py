@@ -20,7 +20,6 @@ def add_user(username, hashed_password):
         raise ValueError("O nome de usuário deve ser uma string não vazia.")
     if not isinstance(hashed_password, bytes):
         raise ValueError("O hash da senha deve ser em formato bytes.")
-    if username in users_db:
         raise ValueError("Usuário já existe no banco de dados.")
 
     # Adiciona o usuário ao dicionário
