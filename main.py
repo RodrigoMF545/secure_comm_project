@@ -4,7 +4,7 @@ from communication.client import connect_to_server, authenticate_and_exchange_ke
 from communication.server import start_server, handle_client
 
 HOST = "127.0.0.1"
-PORT = 65432
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -14,7 +14,7 @@ if __name__ == "__main__":
     role = sys.argv[1]
 
     if role == "server":
-        server_socket = start_server(HOST, PORT)
+        server_socket = start_server(HOST, 12346)
         print("[✓] Servidor iniciado e aguardando conexões...")
 
         while True:
@@ -22,7 +22,7 @@ if __name__ == "__main__":
             threading.Thread(target=handle_client, args=(client_sock, addr), daemon=True).start()
 
     elif role == "client":
-        sock = connect_to_server(HOST, PORT)
+        sock = connect_to_server(HOST, 12345)
         username = input("Seu nome de usuário: ")
         password = input("Sua senha: ")
         try:

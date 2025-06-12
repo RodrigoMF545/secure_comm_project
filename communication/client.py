@@ -2,6 +2,7 @@ import hashlib
 import socket
 import threading
 import pickle
+import struct
 
 from cryptography.hazmat.primitives import serialization
 
@@ -10,20 +11,36 @@ from crypto.diffie_hellman import generate_diffie_hellman_parameters, perform_ke
 from crypto.rsa_utils import generate_rsa_keys, rsa_verify, rsa_sign
 from crypto.aes import encrypt_message, decrypt_message
 
+# --- Utilitários seguros de envio/recebimento com framing ---
+
+def send_pickle(sock, obj):
+    data = pickle.dumps(obj)
+    length = struct.pack('!I', len(data))  # 4 bytes big-endian
+    sock.sendall(length + data)
+
+def recv_exact(sock, n):
+    data = b''
+    while len(data) < n:
+        packet = sock.recv(n - len(data))
+        if not packet:
+            raise ConnectionError("Conexão encerrada inesperadamente.")
+        data += packet
+    return data
+
+def recv_pickle(sock):
+    raw_length = recv_exact(sock, 4)
+    length = struct.unpack('!I', raw_length)[0]
+    data = recv_exact(sock, length)
+    return pickle.loads(data)
+
+# --- Comunicação principal ---
 
 def connect_to_server(host, port):
-    """
-    Conecta ao servidor
-    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((host, port))
     return sock
 
 def authenticate_and_exchange_keys(sock, username, password):
-    """
-    Autentica o usuário e realiza troca de chaves
-    :return: tupla (shared_key, server_public_key_rsa, client_private_key_rsa)
-    """
     try:
         validate_username(username)
         validate_password(password)
@@ -33,11 +50,12 @@ def authenticate_and_exchange_keys(sock, username, password):
 
     auth_data = {"username": username, "password": password}
     print(f"Enviando credenciais: {auth_data}")
-    sock.sendall(pickle.dumps(auth_data))
+    send_pickle(sock, auth_data)
 
     print("Aguardando resposta do servidor...")
-    response = pickle.loads(sock.recv(4096))
+    response = recv_pickle(sock)
     print(f"Resposta recebida do servidor: {response}")
+
     if response.get("status") == "error":
         error_msg = response.get("message", "Autenticação falhou")
         print(f"[x] Erro de autenticação: {error_msg}")
@@ -67,40 +85,32 @@ def authenticate_and_exchange_keys(sock, username, password):
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
     }
-    sock.sendall(pickle.dumps(client_data))
+    send_pickle(sock, client_data)
 
     shared_key = perform_key_exchange(client_private_key_dh, server_public_key_dh)
-    # Derivar uma chave de 32 bytes para AES-256
     derived_key = hashlib.sha256(shared_key).digest()
+
     print(f"[✓] Autenticação e troca de chaves bem-sucedidas para {username}")
     return derived_key, server_public_key_rsa, client_private_key_rsa
 
 def send_message(sock, message, key, private_key_rsa):
-    """
-    Envia uma mensagem criptografada com HMAC e assinatura
-    """
     try:
         message_bytes = message.encode()
         signature = rsa_sign(private_key_rsa, message_bytes)
         encrypted = encrypt_message(key, message_bytes)
-        sock.sendall(pickle.dumps({
-            "nonce": encrypted[0], "ciphertext": encrypted[1],
-            "hmac": encrypted[2], "signature": signature
-        }))
+        send_pickle(sock, {
+            "nonce": encrypted[0],
+            "ciphertext": encrypted[1],
+            "hmac": encrypted[2],
+            "signature": signature
+        })
     except Exception as e:
         print("[x] Erro no envio:", e)
 
 def receive_messages(sock, key, server_public_key_rsa):
-    """
-    Recebe e processa mensagens do servidor
-    """
     while True:
         try:
-            data = sock.recv(4096)
-            if not data:
-                print("[!] Conexão encerrada pelo servidor.")
-                break
-            msg_data = pickle.loads(data)
+            msg_data = recv_pickle(sock)
             nonce, ciphertext, hmac_value, signature, sender_public_key = (
                 msg_data["nonce"], msg_data["ciphertext"], msg_data["hmac"],
                 msg_data["signature"], msg_data["sender_public_key"]

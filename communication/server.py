@@ -1,152 +1,125 @@
-import hashlib
 import socket
 import threading
 import pickle
+import struct
 
 from cryptography.hazmat.primitives import serialization
 
 from auth.user_auth import login_user
 from crypto.diffie_hellman import generate_diffie_hellman_parameters, perform_key_exchange
-from crypto.rsa_utils import generate_rsa_keys, rsa_verify, rsa_sign
+from crypto.rsa_utils import generate_rsa_keys
 from crypto.aes import encrypt_message, decrypt_message
 
-clients = {}  # username -> (socket, public_key_rsa, shared_key)
+# --- Funções utilitárias para envio/recebimento com framing ---
 
-def start_server(host, port):
-    """
-    Inicia o servidor e retorna o socket
-    """
-    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_sock.bind((host, port))
-    server_sock.listen()
-    print(f"[✓] Servidor iniciado na porta {port} e aguardando conexões...")
-    return server_sock
+def send_pickle(sock, obj):
+    data = pickle.dumps(obj)
+    length = struct.pack('!I', len(data))  # 4 bytes big-endian
+    sock.sendall(length + data)
 
-def handle_client(client_sock, addr):
-    """
-    Gerencia a conexão com um cliente, incluindo autenticação e troca de chaves
-    """
+def recv_exact(sock, n):
+    data = b''
+    while len(data) < n:
+        packet = sock.recv(n - len(data))
+        if not packet:
+            raise ConnectionError("Conexão encerrada inesperadamente.")
+        data += packet
+    return data
+
+def recv_pickle(sock):
+    raw_length = recv_exact(sock, 4)
+    length = struct.unpack('!I', raw_length)[0]
+    data = recv_exact(sock, length)
+    return pickle.loads(data)
+
+# --- Inicialização do servidor ---
+
+dh_parameters = generate_diffie_hellman_parameters()
+server_private_key_rsa, server_public_key_rsa = generate_rsa_keys()
+
+# Dicionário para armazenar sessões de clientes (exemplo simples)
+client_sessions = {}
+
+def handle_client(conn, addr):
     try:
-        print(f"Recebendo dados de {addr}")
-        auth_data = pickle.loads(client_sock.recv(4096))
-        username, password = auth_data["username"], auth_data["password"]
-        print(f"Tentando autenticar {username} com senha fornecida: {password}")
+        print(f"[+] Cliente conectado: {addr}")
+
+        # Recebe dados de autenticação
+        auth_data = recv_pickle(conn)
+        username = auth_data.get("username")
+        password = auth_data.get("password")
+
+        # Autentica usuário com a função do seu user_auth.py
         if not login_user(username, password):
-            print(f"Autenticação falhou para {username}. Verificando banco de dados: {get_user(username)}")
-            client_sock.sendall(pickle.dumps({"status": "error", "message": "Autenticação falhou"}))
-            client_sock.close()
+            send_pickle(conn, {"status": "error", "message": "Usuário ou senha inválidos"})
+            conn.close()
             return
 
-        dh_parameters = generate_diffie_hellman_parameters()
-        server_private_key_rsa, server_public_key_rsa = generate_rsa_keys()
+        # Gera a chave privada DH do servidor para essa sessão
         server_private_key_dh = dh_parameters.generate_private_key()
         server_public_key_dh = server_private_key_dh.public_key()
 
-        # Exportar para formato serializável
-        dh_params_bytes = dh_parameters.parameter_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.ParameterFormat.PKCS3
-        )
-        server_public_dh_bytes = server_public_key_dh.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
-        server_public_rsa_bytes = server_public_key_rsa.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
-
-        server_data = {
-            "dh_parameters": dh_params_bytes,
-            "server_public_key_dh": server_public_dh_bytes,
-            "server_public_key_rsa": server_public_rsa_bytes
+        # Prepara resposta com parâmetros DH e chaves públicas RSA e DH
+        response = {
+            "status": "ok",
+            "dh_parameters": dh_parameters.parameter_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.ParameterFormat.PKCS3
+            ),
+            "server_public_key_dh": server_public_key_dh.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ),
+            "server_public_key_rsa": server_public_key_rsa.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
         }
-        print(f"Enviando ao cliente: {server_data}")
-        client_sock.sendall(pickle.dumps(server_data))
+        send_pickle(conn, response)
 
-        client_data = pickle.loads(client_sock.recv(4096))
-        client_public_key_dh = serialization.load_pem_public_key(
-            client_data["client_public_key_dh"]
-        )
-        client_public_key_rsa = serialization.load_pem_public_key(
-            client_data["client_public_key_rsa"]
-        )
+        # Recebe as chaves públicas DH e RSA do cliente
+        client_keys = recv_pickle(conn)
+        client_public_key_dh = serialization.load_pem_public_key(client_keys["client_public_key_dh"])
+        client_public_key_rsa = serialization.load_pem_public_key(client_keys["client_public_key_rsa"])
 
+        # Gera chave compartilhada DH
         shared_key = perform_key_exchange(server_private_key_dh, client_public_key_dh)
-        # Derivar uma chave de 32 bytes para AES-256
-        derived_key = hashlib.sha256(shared_key).digest()
 
-        clients[username] = (client_sock, client_public_key_rsa, derived_key)
-        print(f"[+] {username} conectado de {addr}")
+        # Armazena dados da sessão
+        client_sessions[addr] = {
+            "username": username,
+            "shared_key": shared_key,
+            "client_public_key_rsa": client_public_key_rsa,
+            "server_private_key_rsa": server_private_key_rsa,
+            "server_private_key_dh": server_private_key_dh,
+        }
 
-        while True:
-            data = client_sock.recv(4096)
-            if not data:
-                break
-            print(f"Dados recebidos de {username}: {data}")
-            try:
-                msg_data = pickle.loads(data)
-                nonce, ciphertext, hmac_value, signature = (
-                    msg_data["nonce"], msg_data["ciphertext"], msg_data["hmac"],
-                    msg_data["signature"]
-                )
-                sender_sock, sender_public_key, sender_shared_key = clients[username]
-                message = decrypt_message(sender_shared_key, nonce, ciphertext, hmac_value)
+        print(f"[✓] Autenticação e troca de chaves concluídas para {username}")
 
-                if not rsa_verify(sender_public_key, signature, message):
-                    error_msg = encrypt_message(sender_shared_key, "Servidor: Assinatura inválida".encode('utf-8'))
-                    sender_sock.sendall(pickle.dumps({
-                        "nonce": error_msg[0], "ciphertext": error_msg[1],
-                        "hmac": error_msg[2], "signature": b""
-                    }))
-                    continue
-
-                message_str = message.decode()
-                if ':' in message_str:
-                    recipient, content = message_str.split(':', 1)
-                    if recipient in clients:
-                        recipient_sock, recipient_public_key, recipient_shared_key = clients[recipient]
-                        # Enviar a chave pública do remetente e a assinatura original
-                        sender_public_key_bytes = sender_public_key.public_bytes(
-                            encoding=serialization.Encoding.PEM,
-                            format=serialization.PublicFormat.SubjectPublicKeyInfo
-                        )
-                        server_signature = rsa_sign(server_private_key_rsa, message)  # Assinatura do servidor
-                        encrypted = encrypt_message(recipient_shared_key, message)
-                        recipient_sock.sendall(pickle.dumps({
-                            "nonce": encrypted[0], "ciphertext": encrypted[1],
-                            "hmac": encrypted[2], "signature": signature,  # Assinatura original da Alice
-                            "sender_public_key": sender_public_key_bytes  # Chave pública do remetente
-                        }))
-                    else:
-                        error_msg = encrypt_message(sender_shared_key, f"Servidor: Usuário '{recipient}' não encontrado.".encode('utf-8'))
-                        sender_sock.sendall(pickle.dumps({
-                            "nonce": error_msg[0], "ciphertext": error_msg[1],
-                            "hmac": error_msg[2], "signature": b""
-                        }))
-                else:
-                    warning = encrypt_message(sender_shared_key, "Servidor: Formato inválido. Use destinatario:mensagem".encode('utf-8'))
-                    sender_sock.sendall(pickle.dumps({
-                        "nonce": warning[0], "ciphertext": warning[1],
-                        "hmac": warning[2], "signature": b""
-                    }))
-
-            except Exception as e:
-                print(f"[x] Erro ao processar mensagem de {username}: {e}")
-                break
+        # Aqui você pode continuar o protocolo de comunicação segura (troca de mensagens etc.)
 
     except Exception as e:
-        print(f"[x] Erro ao lidar com cliente {addr}: {e}")
-
+        print(f"[x] Erro no cliente {addr}: {e}")
     finally:
-        print(f"[-] {username} desconectado.")
-        clients.pop(username, None)
-        client_sock.close()
+        conn.close()
+        print(f"[-] Cliente desconectado: {addr}")
 
-def get_user(username):
-    """
-    Função temporária para depuração, assumindo que está em storage.py
-    """
-    from auth.storage import users_db
-    return users_db.get(username)
+def start_server(host='localhost', port=12345):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind((host, port))
+    sock.listen()
+    print(f"[+] Servidor escutando em {host}:{port}")
+
+    try:
+        while True:
+            conn, addr = sock.accept()
+            thread = threading.Thread(target=handle_client, args=(conn, addr))
+            thread.daemon = True
+            thread.start()
+    except KeyboardInterrupt:
+        print("\n[!] Servidor finalizado manualmente.")
+    finally:
+        sock.close()
+
+if __name__ == "__main__":
+    start_server()
