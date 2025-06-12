@@ -1,12 +1,10 @@
 import sys
 import threading
-from communication.client import connect_to_server, send_username, send_message, receive_messages
+from communication.client import connect_to_server, authenticate_and_exchange_keys, send_message, receive_messages
 from communication.server import start_server, handle_client
-from crypto.aes import generate_key
 
 HOST = "127.0.0.1"
 PORT = 65432
-SHARED_KEY = bytes.fromhex("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -21,22 +19,27 @@ if __name__ == "__main__":
 
         while True:
             client_sock, addr = server_socket.accept()
-            threading.Thread(target=handle_client, args=(client_sock, addr, SHARED_KEY), daemon=True).start()
+            threading.Thread(target=handle_client, args=(client_sock, addr), daemon=True).start()
 
     elif role == "client":
         sock = connect_to_server(HOST, PORT)
         username = input("Seu nome de usuário: ")
-        send_username(sock, username)
+        password = input("Sua senha: ")
+        try:
+            shared_key, server_public_key_rsa, client_private_key_rsa = authenticate_and_exchange_keys(sock, username, password)
+        except ValueError as e:
+            print(f"[x] Erro: {e}")
+            sock.close()
+            sys.exit(1)
 
         print(f">> Conectado como {username}. Envie mensagens no formato destinatario:mensagem")
 
-        threading.Thread(target=receive_messages, args=(sock, SHARED_KEY), daemon=True).start()
+        threading.Thread(target=receive_messages, args=(sock, shared_key, server_public_key_rsa), daemon=True).start()
 
         while True:
             msg = input(">> ")
             if msg.lower() == "sair":
                 break
-            send_message(sock, msg, SHARED_KEY)
+            send_message(sock, msg, shared_key, client_private_key_rsa)
 
         sock.close()
-
