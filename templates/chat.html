@@ -288,7 +288,6 @@
           style="
             display: none;
             flex: 1;
-            display: flex;
             flex-direction: column;
             height: 100%;
             min-height: 0;
@@ -329,6 +328,7 @@
       let currentChat = null;
       let token;
       let onlineUsers = new Set();
+      let localPublicKeyHex;
 
       // Verificar autenticação
       function checkAuth() {
@@ -367,6 +367,7 @@
 
         socket.on("join_success", (data) => {
           console.log("Conectado como:", data.username);
+          localPublicKeyHex = data.public_key; // Armazenar a chave pública
         });
 
         socket.on("online_users", (data) => {
@@ -395,6 +396,14 @@
             displayMessage(data, true);
             scrollToBottom();
           }
+        });
+
+        socket.on("exchange_success", (data) => {
+          console.log("Exchange key sucesso com:", data.peer_user);
+          socket.emit("get_chat_history", {
+            token: token,
+            other_user: data.peer_user
+          });
         });
 
         socket.on("chat_history", (data) => {
@@ -444,11 +453,11 @@
             }
 
             userItem.innerHTML = `
-                        <div class="user-status ${
-                          onlineUsers.has(user) ? "" : "offline"
-                        }"></div>
-                        <span>${user}</span>
-                    `;
+              <div class="user-status ${
+                onlineUsers.has(user) ? "" : "offline"
+              }"></div>
+              <span>${user}</span>
+            `;
 
             usersList.appendChild(userItem);
           }
@@ -471,10 +480,11 @@
         // Atualizar lista de usuários
         updateUsersList(Array.from(onlineUsers));
 
-        // Carregar histórico do chat
-        socket.emit("get_chat_history", {
+        // FAZER EXCHANGE_KEY PRIMEIRO
+        socket.emit("exchange_key", {
           token: token,
-          other_user: username
+          peer_user: username,
+          peer_public_key: localPublicKeyHex // <-- tua public key local
         });
       }
 
