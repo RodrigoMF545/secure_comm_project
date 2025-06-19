@@ -1,3 +1,7 @@
-cryptography==39.0.1
-pycryptodome==3.11.0
-bcrypt==3.2.2
+
+Flask==2.3.3
+Flask-SocketIO==5.3.6
+python-socketio==5.9.0
+bcrypt==4.0.1
+PyJWT==2.8.0
+python-dotenv==1.0.0

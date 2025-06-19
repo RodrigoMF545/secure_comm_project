@@ -1,18 +1,23 @@
-import os
+# crypto/prng_utils.py
 
-def generate_secure_key(size):
-    """
-    Gera uma chave segura de tamanho especificado
-    :param size: tamanho da chave (em bytes)
-    :return: chave gerada
-    """
-    # TODO: implementar geração segura de chave
-    pass
+from secrets import token_bytes
 
-def generate_secure_iv():
+def generate_iv(length=12):
     """
-    Gera um vetor de inicialização (IV) seguro de 16 bytes
-    :return: vetor de inicialização
+    Gera um IV (Initialization Vector) seguro de length bytes.
+    Por padrão, 12 bytes (96 bits) recomendado para AES-GCM.
     """
-    # TODO: implementar geração de IV seguro
-    pass
+    return token_bytes(length)
+
+def generate_nonce(length=16):
+    """
+    Gera um nonce seguro de length bytes.
+    """
+    return token_bytes(length)
+
+def generate_random_key(length=32):
+    """
+    Gera uma chave aleatória segura de length bytes.
+    32 bytes = 256 bits, ideal para AES-256.
+    """
+    return token_bytes(length)
