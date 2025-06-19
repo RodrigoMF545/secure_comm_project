@@ -2,15 +2,16 @@
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import padding
+import os
 import base64
-import secrets  # Usando o módulo secrets para geração segura de números aleatórios
 
 # AES-GCM não precisa de padding
 # Para CBC seria necessário usar o padding abaixo
 
 def encrypt_message(key, plaintext):
-    # Gerar nonce (IV) usando secrets
-    iv = secrets.token_bytes(12)  # 96 bits para GCM
+    # Gerar nonce (IV)
+    iv = os.urandom(12)  # 96 bits para GCM
     
     # Cria cipher AES-GCM
     encryptor = Cipher(
