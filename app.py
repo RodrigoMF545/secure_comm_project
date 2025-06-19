@@ -9,6 +9,8 @@ from crypto.aes import encrypt_message, decrypt_message
 from crypto.diffie_hellman import generate_private_key, get_public_bytes, compute_shared_key
 from crypto.rsa_utils import generate_rsa_keys, rsa_sign, rsa_verify
 import secrets  # Importando o módulo secrets para gerar chaves seguras
+from debug_tools import log_token, log_ecdh_keys, log_signature, log_aes_encryption
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'sua_chave_secreta_aqui'
@@ -200,6 +202,7 @@ def handle_private_message(data):
             raise Exception(f'Chave não estabelecida entre {sender} e {recipient}')
 
         encrypted = encrypt_message(aes_key, message)
+        log_aes_encryption(sender, recipient, encrypted)
 
         chat_id = f"{min(sender, recipient)}_{max(sender, recipient)}"
         if chat_id not in messages_db:
@@ -219,6 +222,7 @@ def handle_private_message(data):
         # Assinar a mensagem
         plaintext_bytes = message.encode('utf-8')
         signature = rsa_sign(active_users[sender]['rsa_private'], plaintext_bytes)
+        log_signature(sender, signature.hex())
 
         decrypted_message_data = {
             'sender': sender,

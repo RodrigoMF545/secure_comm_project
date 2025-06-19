@@ -49,7 +49,7 @@ def disconnect():
     print('[MITM] Desconectado.')
 
 if __name__ == '__main__':
-    server_url = 'http://localhost:5000'
+    server_url = 'http://172.16.23.32:5000'
     print(f"[MITM] Iniciando ataque contra {server_url} ...")
     sio.connect(server_url)
     sio.wait()
